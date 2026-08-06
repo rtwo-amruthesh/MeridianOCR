@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian OCR Bench — clinical document extraction</title>
+<meta name="description" content="Upload a scanned clinical report, watch it get read, and verify every extracted field against the original scan.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230B6E75'/><path d='M8 22V10h4l4 7 4-7h4v12' stroke='white' stroke-width='2.4' fill='none' stroke-linejoin='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<div class="boot" id="boot"><span>Starting bench…</span></div>
+
+<!-- ══════════════════════════ AUTH ══════════════════════════ -->
+<section class="auth" id="view-auth" hidden>
+  <div class="auth__brand">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7"/><path d="M8 22V10h4l4 7 4-7h4v12"/></svg>
+    </div>
+    <div>
+      <p class="eyebrow">Meridian</p>
+      <h1 class="wordmark">OCR Bench</h1>
+    </div>
+  </div>
+
+  <p class="auth__pitch">Scanned reports go in. Typed, checkable fields come out — each one traceable back to the pixels it came from.</p>
+
+  <div class="card auth__card">
+    <div class="tabs" role="tablist">
+      <button class="tab is-on" role="tab" data-authtab="login">Sign in</button>
+      <button class="tab" role="tab" data-authtab="register">Create account</button>
+    </div>
+
+    <form class="form" id="form-login" autocomplete="on">
+      <label class="field"><span>Username</span><input name="username" required autocomplete="username" placeholder="a.menon"></label>
+      <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password" placeholder="••••••••"></label>
+      <p class="note" id="login-note"></p>
+      <button class="btn btn--primary btn--wide" type="submit">Sign in</button>
+    </form>
+
+    <form class="form" id="form-register" hidden autocomplete="on">
+      <div class="row2">
+        <label class="field"><span>First name</span><input name="firstName" autocomplete="given-name"></label>
+        <label class="field"><span>Last name</span><input name="lastName" autocomplete="family-name"></label>
+      </div>
+      <label class="field"><span>Username</span><input name="username" required minlength="3" maxlength="20" autocomplete="username"></label>
+      <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email"></label>
+      <label class="field"><span>Password</span><input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+      <p class="note" id="register-note"></p>
+      <button class="btn btn--primary btn--wide" type="submit">Create account</button>
+    </form>
+  </div>
+
+  <div class="auth__demo">
+    <p><strong>No backend running?</strong> Demo Mode reads a synthetic lab report locally so you can walk the whole flow.</p>
+    <button class="btn btn--ghost" id="btn-demo">Enter Demo Mode</button>
+  </div>
+
+  <footer class="auth__foot">
+    <span id="auth-endpoint" class="mono"></span>
+    <button class="linkish" id="btn-auth-settings">Change API endpoint</button>
+  </footer>
+</section>
+
+<!-- ══════════════════════════ APP ══════════════════════════ -->
+<div class="app" id="view-app" hidden>
+
+  <header class="topbar">
+    <div class="topbar__brand">
+      <div class="mark mark--sm" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="7"/><path d="M8 22V10h4l4 7 4-7h4v12"/></svg>
+      </div>
+      <span class="wordmark wordmark--sm">OCR Bench</span>
+    </div>
+    <div class="topbar__status">
+      <span class="pill" id="conn-pill"><i class="dot"></i><span id="conn-text">—</span></span>
+      <span class="who mono" id="who"></span>
+      <button class="btn btn--quiet" id="btn-signout">Sign out</button>
+    </div>
+  </header>
+
+  <nav class="rail" aria-label="Sections">
+    <button class="rail__item is-on" data-view="bench">
+      <svg viewBox="0 0 24 24"><path d="M4 4h11l5 5v11H4z"/><path d="M15 4v5h5"/><path d="M8 13h8M8 17h5"/></svg>
+      <span>Bench</span>
+    </button>
+    <button class="rail__item" data-view="history">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      <span>History</span>
+    </button>
+    <button class="rail__item" data-view="settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <main class="stage">
+
+    <!-- ── BENCH ── -->
+    <section class="pane" id="pane-bench">
+
+      <!-- intake -->
+      <div class="intake" id="intake">
+        <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose a scan to read">
+          <svg class="drop__icon" viewBox="0 0 48 48"><path d="M24 32V12M24 12l-7 7M24 12l7 7"/><path d="M8 30v6a2 2 0 002 2h28a2 2 0 002-2v-6"/></svg>
+          <p class="drop__lead">Drop a scan here</p>
+          <p class="drop__sub">or <span class="linkish">browse your files</span> — PNG, JPG or PDF, up to 10&nbsp;MB</p>
+          <input type="file" id="file" accept="image/png,image/jpeg,image/webp,application/pdf" hidden>
+        </div>
+        <p class="intake__aside">Everything you upload stays inside your own deployment. This page never sends a file anywhere except the endpoint you configured.</p>
+      </div>
+
+      <!-- pipeline -->
+      <div class="pipeline" id="pipeline" hidden>
+        <div class="pipeline__head">
+          <p class="eyebrow">Reading</p>
+          <h2 class="filename mono" id="pipe-filename"></h2>
+        </div>
+        <ol class="rail-steps" id="steps">
+          <li data-step="UPLOADING"><span class="rail-steps__dot"></span><span>Uploading</span></li>
+          <li data-step="PROCESSING"><span class="rail-steps__dot"></span><span>Processing</span></li>
+          <li data-step="EXTRACTING"><span class="rail-steps__dot"></span><span>Extracting text</span></li>
+          <li data-step="SUMMARIZING"><span class="rail-steps__dot"></span><span>Structuring fields</span></li>
+          <li data-step="COMPLETED"><span class="rail-steps__dot"></span><span>Ready to verify</span></li>
+        </ol>
+        <div class="meter"><div class="meter__fill" id="meter-fill"></div></div>
+        <p class="pipeline__msg" id="pipe-msg"></p>
+        <button class="btn btn--quiet" id="btn-cancel">Cancel</button>
+      </div>
+
+      <!-- verification bench -->
+      <div class="bench" id="bench" hidden>
+
+        <div class="bench__scan">
+          <div class="scanbar">
+            <p class="eyebrow">Source scan</p>
+            <div class="zoom">
+              <button class="btn btn--icon" id="zoom-out" aria-label="Zoom out">−</button>
+              <span class="mono" id="zoom-label">Fit</span>
+              <button class="btn btn--icon" id="zoom-in" aria-label="Zoom in">+</button>
+              <button class="btn btn--icon" id="zoom-fit" aria-label="Fit to width">⤢</button>
+            </div>
+          </div>
+          <div class="viewport" id="viewport">
+            <div class="stack" id="stack">
+              <img id="scan-img" alt="Uploaded scan">
+              <svg class="overlay" id="overlay" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+          </div>
+          <p class="scan__hint">Hover a region or a line to link the two.</p>
+        </div>
+
+        <div class="bench__data">
+          <div class="readout">
+            <div class="readout__stat">
+              <span class="eyebrow">Mean confidence</span>
+              <strong class="mono" id="stat-conf">—</strong>
+            </div>
+            <div class="readout__stat">
+              <span class="eyebrow">Lines read</span>
+              <strong class="mono" id="stat-lines">—</strong>
+            </div>
+            <div class="readout__stat readout__stat--flag">
+              <span class="eyebrow">Below threshold</span>
+              <strong class="mono" id="stat-review">—</strong>
+            </div>
+          </div>
+
+          <div class="threshold">
+            <label for="thresh">Review threshold</label>
+            <input type="range" id="thresh" min="50" max="99" value="85">
+            <output class="mono" id="thresh-out">85%</output>
+          </div>
+
+          <div class="tabs tabs--data" role="tablist">
+            <button class="tab is-on" data-datatab="fields" role="tab">Fields</button>
+            <button class="tab" data-datatab="lines" role="tab">Lines</button>
+            <button class="tab" data-datatab="summary" role="tab">Summary</button>
+          </div>
+
+          <div class="datapanel" id="tab-fields"></div>
+          <div class="datapanel" id="tab-lines" hidden></div>
+          <div class="datapanel" id="tab-summary" hidden></div>
+
+          <div class="bench__actions">
+            <button class="btn btn--primary" id="btn-export">Download JSON</button>
+            <button class="btn btn--ghost" id="btn-copy">Copy text</button>
+            <button class="btn btn--quiet" id="btn-new">Read another</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── HISTORY ── -->
+    <section class="pane" id="pane-history" hidden>
+      <div class="pane__head">
+        <div>
+          <p class="eyebrow">Record</p>
+          <h2 class="h2">Everything you've read</h2>
+        </div>
+        <button class="btn btn--quiet" id="btn-refresh">Refresh</button>
+      </div>
+      <div id="history-body"></div>
+    </section>
+
+    <!-- ── SETTINGS ── -->
+    <section class="pane" id="pane-settings" hidden>
+      <div class="pane__head">
+        <div>
+          <p class="eyebrow">Connection</p>
+          <h2 class="h2">Where the bench sends files</h2>
+        </div>
+      </div>
+
+      <div class="card settings">
+        <label class="field">
+          <span>API base URL</span>
+          <input id="set-api" class="mono" placeholder="https://your-api.onrender.com/api">
+          <small>Your Spring Boot service, including its <code>/api</code> context path. Leave blank to stay in Demo Mode.</small>
+        </label>
+
+        <label class="toggle">
+          <input type="checkbox" id="set-demo">
+          <span class="toggle__track"><span class="toggle__knob"></span></span>
+          <span class="toggle__label">
+            <strong>Demo Mode</strong>
+            <small>Reads a synthetic report locally. No network calls, no backend needed.</small>
+          </span>
+        </label>
+
+        <div class="settings__actions">
+          <button class="btn btn--primary" id="btn-save-settings">Save connection</button>
+          <button class="btn btn--ghost" id="btn-test">Test connection</button>
+          <span class="note" id="settings-note"></span>
+        </div>
+      </div>
+
+      <div class="card advisory">
+        <p class="eyebrow">Deploying this</p>
+        <p>Netlify serves this page. Your API and the PaddleOCR service need a host that runs containers — Render, Railway or Fly.io. Put the API's public URL above and the bench will use it.</p>
+        <p>If the browser blocks requests, the API's CORS allowlist needs this site's origin: <code class="mono" id="origin-hint"></code></p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

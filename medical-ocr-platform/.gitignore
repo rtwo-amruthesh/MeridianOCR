@@ -1,0 +1,34 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# java
+target/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.mvn/
+*.class
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/
+
+# runtime data
+uploads/
+*.log
+
+# never commit real documents
+samples/private/
+*.pdf
+!docs/**/*.pdf
+
+# editors / os
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

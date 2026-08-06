@@ -1,0 +1,8 @@
+# Test-only. PaddleOCR is stubbed in tests, so the heavy wheels in
+# requirements.txt aren't installed here — this is why CI finishes in seconds
+# rather than pulling several hundred MB of model runtime.
+pytest==8.3.4
+httpx==0.28.1
+fastapi==0.115.6
+pydantic==2.10.4
+python-multipart==0.0.20
