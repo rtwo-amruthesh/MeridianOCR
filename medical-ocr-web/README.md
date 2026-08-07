@@ -40,33 +40,49 @@ Netlify serves static files. This app is static — no build step, no bundler, n
 
 ### Your backend does *not* go on Netlify
 
-The Spring Boot API needs a JVM, and the OCR service needs Python plus a few hundred MB of PaddleOCR model weights. Neither runs on Netlify. Host them on **Render**, **Railway** or **Fly.io**, and MongoDB on **MongoDB Atlas** (free tier is enough).
+The Spring Boot API needs a JVM, and the OCR service needs Python plus about 2 GB of
+PaddleOCR model weights. Neither runs on Netlify.
 
-Then either:
+That 2 GB is the binding constraint on where the backend can live — most free tiers
+cap at 512 MB and PaddleOCR will OOM. See `../medical-ocr-platform/README.md` for the
+platform comparison. MongoDB Atlas M0 is genuinely free and sufficient.
 
-- open **Settings** in the app and paste the API URL, or
-- set `DEFAULT_API_BASE` in `assets/js/config.js` before deploying, so every visitor gets it
+For a demo without deploying anything, run the stack locally and expose it with a
+Cloudflare quick tunnel:
 
-The URL must include the context path: `https://your-api.onrender.com/api`
+```bash
+cloudflared tunnel --url http://localhost:8080
+```
+
+Paste the printed URL plus `/api` into Settings. No account required; the URL changes
+each restart.
 
 ---
 
 ## Connecting the backend
 
-### 1. CORS
+### 1. Point the client at the API
 
-Your `SecurityConfig` currently allows only `localhost:3000` and `localhost:8080`. Add your Netlify origin:
+Either open **Settings** in the app and paste the URL, or set `DEFAULT_API_BASE` in
+`assets/js/config.js` before deploying so every visitor gets it.
 
-```java
-configuration.setAllowedOrigins(List.of(
-    "http://localhost:5173",
-    "https://your-site.netlify.app"
-));
+**The URL must include the `/api` context path**: `https://your-api.example.com/api`.
+Without it every call 404s. This is the single most common setup mistake.
+
+### 2. CORS
+
+The API reads allowed origins from the `CORS_ALLOWED_ORIGINS` environment variable —
+a comma-separated list, no code change needed:
+
+```
+CORS_ALLOWED_ORIGINS=https://medical-ocr.netlify.app,http://localhost:5173
 ```
 
-Also delete the `@CrossOrigin(origins = "*")` annotations on `AuthController` and `OcrController` — they contradict this config, and `*` with `allowCredentials(true)` is rejected by browsers.
+It is an **exact string match**. No trailing slash, `https` not `http`. A mismatch
+shows in the browser as a network error with *nothing in the API log*, because the
+request never arrives.
 
-### 2. Endpoints used
+### 3. Endpoints used
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -76,21 +92,14 @@ Also delete the `@CrossOrigin(origins = "*")` annotations on `AuthController` an
 | GET | `/ocr/progress/{id}` | pipeline state |
 | GET | `/ocr/result/{id}` | final extraction |
 | GET | `/ocr/history` | previous reads |
+| GET | `/ocr/file/{id}` | the original scan |
+| DELETE | `/ocr/result/{id}` | remove a read |
 
 All except `/auth/*` send `Authorization: Bearer <token>`.
 
-### 3. Response shape
+### 4. Response shape
 
-The app reads your **current** shape without any changes:
-
-```json
-{ "id": "...", "fileName": "scan.png", "extractedText": ["line one", "line two"],
-  "accuracy": 91.4, "summary": "...", "status": "COMPLETED", "processedAt": "..." }
-```
-
-With that shape you get everything except the overlay — there's nothing to draw regions from, and every line shares the same document-level confidence.
-
-To light up the bench, return **per-line** data instead:
+The API returns per-line data, which is what lights up the bench:
 
 ```json
 {
@@ -101,15 +110,20 @@ To light up the bench, return **per-line** data instead:
   "lines": [
     { "text": "Haemoglobin 11.2 g/dL 12.0 - 15.5 L",
       "confidence": 0.953,
-      "bbox": [[58,398],[846,398],[846,419],[58,419]] }
+      "bbox": [[58,398],[846,398],[846,419],[58,419]],
+      "page": 1 }
   ],
+  "extractedText": ["Haemoglobin 11.2 g/dL 12.0 - 15.5 L"],
+  "accuracy": 91.4,
   "status": "COMPLETED"
 }
 ```
 
-`bbox` is a four-point polygon in **source-image pixels**. PaddleOCR already gives you this as `line[0]` — the current `app.py` throws it away. Keep it.
+`bbox` is a four-point polygon in **source-image pixels**. `extractedText` is
+retained so anything written against the older `string[]` contract keeps working.
 
-The client accepts `bbox` as a polygon, `[x, y, w, h]`, `{x,y,w,h}` or `{x1,y1,x2,y2}`, and `confidence` as either `0–1` or `0–100`.
+The client also accepts `bbox` as `[x, y, w, h]`, `{x,y,w,h}` or `{x1,y1,x2,y2}`,
+and `confidence` as either `0–1` or `0–100`.
 
 ---
 
@@ -160,10 +174,23 @@ No dependencies. Two web fonts.
 
 ## Known limits
 
-- **PDF uploads** are accepted and forwarded, but the scan pane can't preview them — the backend would need to return a rendered page image.
-- **Field extraction is heuristic.** It handles `Label: value` pairs and `name value unit range flag` rows. Multi-column layouts where OCR splits columns into separate lines will not parse cleanly. This is presented as a review surface, not a source of truth.
-- **Reopening from history in live mode** shows the data without the scan, because the API doesn't serve the original file back. Add a `GET /ocr/file/{id}` endpoint to fix that.
-- Progress state lives in a server-side `HashMap`, so it's lost on restart and unreliable across replicas.
+- **PDF uploads read correctly but show no overlay.** `setImageFromFile()` nulls the
+  image for `application/pdf` because a browser can't use a PDF as an `<img>` source,
+  and the OCR service discards the page images it rasterises internally. The text,
+  confidence and polygons are all correct — there is just nothing to draw them on.
+  Fixing it means having the backend return and store the rendered page. **Images
+  are unaffected and the overlay works fully for them.**
+- **Field extraction is heuristic and lab-report shaped.** It handles `Label: value`
+  pairs and `name value unit range flag` rows. On a document with a different
+  structure it may find almost nothing even when every line was read perfectly.
+  Multi-column layouts where OCR splits columns into separate lines will not parse
+  cleanly. This is a review surface, not a source of truth.
+- **Validation failures show a bare "Bad Request".** The API sends a `fieldErrors`
+  map naming the offending field; this client ignores it. Worth wiring up — the
+  password minimum is 12 characters and there is currently no way for a user to
+  discover that.
+- Progress state lives in a server-side map, so it's lost on restart and unreliable
+  across replicas.
 
 ---
 

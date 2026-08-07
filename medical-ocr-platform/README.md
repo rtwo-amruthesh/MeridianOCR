@@ -140,24 +140,65 @@ Result shape:
 
 ## Deploying
 
-Render, Railway or Fly.io — both services have Dockerfiles. MongoDB Atlas for the database. The web client goes on Netlify.
+Both services have Dockerfiles. The web client goes on Netlify (free, no build step).
+
+**The constraint that decides everything: PaddleOCR needs about 2 GB of RAM.**
+That rules out most free tiers.
+
+| Platform | Verdict |
+|---|---|
+| **Oracle Cloud Always Free** | 4 vCPU / 24 GB ARM, free indefinitely. Runs the whole stack on one box. Needs a card for identity verification, ARM capacity is often exhausted, and `paddlepaddle==2.6.2` is pinned to x86 so ARM64 needs a version bump. |
+| **Render** | Works, but private services have no free tier. Roughly $25/mo Standard for the OCR service plus $7/mo Starter for the API. |
+| **Hugging Face Spaces** | Free CPU Basic is 16 GB and would fit, but Docker Spaces require a paid plan. |
+| **Fly.io, Railway** | Free tiers withdrawn or credit-limited. |
 
 Set on the API: `JWT_SECRET`, `MONGODB_URI`, `OCR_SERVICE_URL`, `OCR_SERVICE_TOKEN`, `CORS_ALLOWED_ORIGINS`.
 Set on the OCR service: `OCR_SERVICE_TOKEN`.
 
-Give the OCR service **at least 2 GB of memory** — PaddleOCR's models won't fit in a 512 MB tier.
+Mount a volume at `/app/uploads`, or every restart loses stored scans and `GET /ocr/file/{id}` 404s on old records.
 
 Keep the OCR service on a private network. It has no user-level auth beyond the shared secret and should never face the internet directly.
+
+### Sharing a local instance
+
+For a demo without deploying, a Cloudflare quick tunnel exposes the local API over HTTPS with no account:
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+```
+
+Paste the printed URL **plus `/api`** into the web client's Settings. The URL changes on every restart; CORS doesn't need updating because it keys off the browser origin.
 
 ---
 
 ## Still open
+
+**Found in use, 6 Aug 2026**
+
+- **PDF overlay is blank.** `_pdf_to_images` rasterises pages into a temp directory that is discarded after the request, and the Java side stores the original PDF — so `GET /ocr/file/{id}` returns a PDF, which a browser can't use as an `<img>` source. The polygons are correct; there is simply no page image to draw them on. Fix: return the rasterised page from the OCR service and persist it beside the record. Images are unaffected.
+- **PaddleOCR warm-up segfaults during the Docker build.** The `RUN python -c "… PaddleOCR(lang='en')" || true` line prints `Segmentation fault (core dumped)` and the `|| true` swallows it, so model weights are not baked into the image — they download on first use instead. That is why the first upload after a fresh build can time out.
+- **Validation errors reach the client as a bare 400.** `GlobalExceptionHandler` already populates `ErrorResponse.fieldErrors`; the web client ignores it. A user who trips the 12-character password rule just sees "Bad Request".
+- **No integration test starts the Spring context.** `mvn verify` compiles and runs unit tests only. A `@Qualifier` wiring bug reached runtime with CI fully green because of this — see the note on `lombok.config` below. One `@SpringBootTest` would have caught it.
+
+**Carried over**
 
 - Progress is process-local. Move to Redis before running more than one API replica.
 - Uploads are never garbage-collected. Add a scheduled cleanup, or push to object storage with a lifecycle rule.
 - No rate limiting on `/auth/login`.
 - No integration tests against a real Mongo — add Testcontainers.
 - Image preprocessing (deskew, denoise, adaptive threshold) would measurably lift accuracy on phone-camera scans.
+
+---
+
+## A trap worth knowing about
+
+`backend/lombok.config` contains this line:
+
+```
+lombok.copyableAnnotations += org.springframework.beans.factory.annotation.Qualifier
+```
+
+**It must stay.** `OcrService` uses `@RequiredArgsConstructor` with a `@Qualifier("ocrExecutor")` field, and Lombok does not copy annotations onto generated constructor parameters unless told to. Without that line Spring sees an unqualified `TaskExecutor`, finds two candidates (`ocrExecutor` and Spring's own `taskScheduler`), and the application crash-loops at startup — while `mvn verify` still passes, because nothing in the test suite boots the context.
 
 ---
 
