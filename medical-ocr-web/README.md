@@ -8,7 +8,7 @@ Built as the frontend for a three-tier stack: **Angular-free static web app → 
 
 ## What it does
 
-- **Sign in / register** against the Spring Boot JWT endpoints
+- **Sign in / register** against the API
 - **Upload** a scan by drag-drop or file picker, with client-side type and size checks
 - **Live pipeline** driven by the API's own `ProgressResponse` states — Uploading, Processing, Extracting, Structuring, Ready
 - **The bench** — the source scan on one side, extracted data on the other. Hovering a region highlights its line, and hovering a line highlights its region. This is the point of the whole app: nothing is asserted without a way to check it.
@@ -24,13 +24,7 @@ Built as the frontend for a three-tier stack: **Angular-free static web app → 
 
 Netlify serves static files. This app is static — no build step, no bundler, no `npm install`.
 
-**Option A — drag and drop**
-
-1. Go to Netlify → *Add new site* → *Deploy manually*
-2. Drag this whole folder onto the drop zone
-3. Done
-
-**Option B — from Git**
+**From Git**
 
 1. Push this folder to GitHub
 2. Netlify → *Import from Git* → pick the repo
@@ -75,7 +69,7 @@ The API reads allowed origins from the `CORS_ALLOWED_ORIGINS` environment variab
 a comma-separated list, no code change needed:
 
 ```
-CORS_ALLOWED_ORIGINS=https://medical-ocr.netlify.app,http://localhost:5173
+CORS_ALLOWED_ORIGINS=https://meridianocr.netlify.app,http://localhost:5173
 ```
 
 It is an **exact string match**. No trailing slash, `https` not `http`. A mismatch
@@ -127,14 +121,6 @@ and `confidence` as either `0–1` or `0–100`.
 
 ---
 
-## Demo Mode
-
-The deployed site is walkable with no backend at all. Demo Mode reads a bundled synthetic haematology report (`assets/demo/specimen-report.svg`) with hand-registered bounding boxes, so the overlay lines up exactly as it would with real PaddleOCR output. Two fields are deliberately low-confidence so the review workflow has something to catch.
-
-**The specimen is invented.** No real patient data appears anywhere in this repository, and none should be added.
-
----
-
 ## Running locally
 
 Any static server works — ES modules need HTTP, not `file://`:
@@ -158,12 +144,10 @@ Then open `http://localhost:5173`.
 ├── _redirects
 └── assets/
     ├── css/styles.css            token system + components
-    ├── demo/specimen-report.svg  synthetic specimen
     └── js/
-        ├── config.js             endpoint + limits
+        ├── config.js             server address + limits
         ├── store.js              storage with in-memory fallback
         ├── api.js                HTTP client + response normalisation
-        ├── mock.js               Demo Mode backend
         ├── extract.js            raw lines → typed clinical fields
         └── app.js                controller
 ```
@@ -185,10 +169,6 @@ No dependencies. Two web fonts.
   structure it may find almost nothing even when every line was read perfectly.
   Multi-column layouts where OCR splits columns into separate lines will not parse
   cleanly. This is a review surface, not a source of truth.
-- **Validation failures show a bare "Bad Request".** The API sends a `fieldErrors`
-  map naming the offending field; this client ignores it. Worth wiring up — the
-  password minimum is 12 characters and there is currently no way for a user to
-  discover that.
 - Progress state lives in a server-side map, so it's lost on restart and unreliable
   across replicas.
 

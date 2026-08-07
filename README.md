@@ -4,8 +4,8 @@ Reads scanned clinical documents and returns the text with per-line confidence a
 the polygon each line was read from — so every extracted value can be traced back
 to the pixels it came from and checked by a person.
 
-**[Live demo →](https://medical-ocr.netlify.app)** — walkable with no backend
-running; Demo Mode replays a bundled synthetic report.
+**[Frontend →](https://meridianocr.netlify.app)** — the viewer. It needs the
+backend running to do anything; see below.
 
 ---
 

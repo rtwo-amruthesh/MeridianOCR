@@ -19,7 +19,7 @@ const trimSlash = (s) => (s || "").replace(/\/+$/, "");
 export function createApi(getConfig) {
   async function call(path, { method = "GET", body, headers = {}, isForm = false, signal } = {}) {
     const { apiBase, token } = getConfig();
-    if (!apiBase) throw new ApiError("No API endpoint configured. Add one in Settings, or switch on Demo Mode.", 0);
+    if (!apiBase) throw new ApiError("No server address set yet. Add one in Settings.", 0);
 
     const h = { Accept: "application/json", ...headers };
     if (token) h.Authorization = `Bearer ${token}`;
@@ -35,7 +35,7 @@ export function createApi(getConfig) {
       });
     } catch (e) {
       if (e.name === "AbortError") throw e;
-      throw new ApiError("Can't reach the API. Check the endpoint, that the service is awake, and that CORS allows this origin.", 0);
+      throw new ApiError("Couldn't reach your reader. Check the address is right, that it's running, and that it's been told this page is allowed to talk to it.", 0);
     }
 
     const raw = await res.text();
@@ -43,7 +43,14 @@ export function createApi(getConfig) {
     if (raw) { try { data = JSON.parse(raw); } catch { data = { message: raw }; } }
 
     if (!res.ok) {
-      const msg = data?.error || data?.message || `Request failed (${res.status})`;
+      let msg = data?.error || data?.message || `Something went wrong (${res.status})`;
+      // The API names the offending field in fieldErrors; surface it rather
+      // than leaving the user with a bare "Bad Request".
+      const fields = data?.fieldErrors;
+      if (fields && typeof fields === "object") {
+        const detail = Object.values(fields).filter(Boolean);
+        if (detail.length) msg = detail.join(" ");
+      }
       throw new ApiError(msg, res.status);
     }
     return data;
@@ -65,7 +72,7 @@ export function createApi(getConfig) {
 
     async ping() {
       const { apiBase } = getConfig();
-      if (!apiBase) throw new ApiError("No API endpoint set.", 0);
+      if (!apiBase) throw new ApiError("No server address set yet.", 0);
       const res = await fetch(trimSlash(apiBase) + "/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

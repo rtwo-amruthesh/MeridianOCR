@@ -1,13 +1,11 @@
 import { APP, STEPS, DEFAULT_API_BASE } from "./config.js";
 import { store, session, settings } from "./store.js";
 import { createApi, normaliseResult, ApiError } from "./api.js";
-import { createMockApi, DEMO_IMAGE, DEMO_IMAGE_SIZE } from "./mock.js";
 import { extractStructured, belowThreshold, toExportPayload } from "./extract.js";
 
 /* ══════════════════════════ state ══════════════════════════ */
 
 const state = {
-  demo: false,
   apiBase: DEFAULT_API_BASE,
   token: null,
   user: null,
@@ -25,24 +23,18 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
 const liveApi = createApi(() => ({ apiBase: state.apiBase, token: state.token }));
-const mockApi = createMockApi();
-const api = () => (state.demo ? mockApi : liveApi);
+const api = () => liveApi;
 
 /* ══════════════════════════ boot ══════════════════════════ */
 
 function boot() {
   const saved = settings.read();
-  if (saved) {
-    state.apiBase = saved.apiBase ?? DEFAULT_API_BASE;
-    state.demo = !!saved.demo;
-  }
-  if (!state.apiBase && !saved) state.demo = false; // first visit: show the choice
+  if (saved) state.apiBase = saved.apiBase ?? DEFAULT_API_BASE;
 
   const s = session.read();
-  if (s?.token || (s?.demo && state.demo)) {
+  if (s?.token) {
     state.token = s.token;
     state.user = s.user;
-    state.demo = s.demo ?? state.demo;
     enterApp();
   } else {
     enterAuth();
@@ -72,15 +64,10 @@ function enterApp() {
 
 function paintConnection() {
   const pill = $("#conn-pill"), text = $("#conn-text");
-  pill.classList.remove("is-live", "is-demo");
-  if (state.demo) {
-    pill.classList.add("is-demo");
-    text.textContent = "Demo Mode";
-  } else {
-    pill.classList.add("is-live");
-    try { text.textContent = new URL(state.apiBase).host; }
-    catch { text.textContent = "Connected"; }
-  }
+  pill.classList.remove("is-live");
+  pill.classList.add("is-live");
+  try { text.textContent = new URL(state.apiBase).host; }
+  catch { text.textContent = state.apiBase ? "Connected" : "No server set"; }
 }
 
 /* ══════════════════════════ views ══════════════════════════ */
@@ -139,32 +126,25 @@ function wireAuth() {
     } finally { btn.disabled = false; }
   });
 
-  $("#btn-demo").addEventListener("click", async () => {
-    state.demo = true;
-    settings.write({ apiBase: state.apiBase, demo: true });
-    const res = await mockApi.login("demo");
-    completeSignIn(res);
-  });
-
   $("#btn-auth-settings").addEventListener("click", () => {
     const next = window.prompt(
-      "API base URL, including the /api context path.\nLeave blank to use Demo Mode.",
+      "Address of your reader — it must end in /api.",
       state.apiBase || "https://your-api.onrender.com/api"
     );
     if (next === null) return;
     state.apiBase = next.trim();
-    settings.write({ apiBase: state.apiBase, demo: state.demo });
+    settings.write({ apiBase: state.apiBase });
     enterAuth();
-    toast(state.apiBase ? "Endpoint saved" : "Endpoint cleared");
+    toast(state.apiBase ? "Server address saved" : "Server address cleared");
   });
 }
 
 function completeSignIn(res) {
   state.token = res.token;
   state.user = res.username;
-  session.write({ token: res.token, user: res.username, demo: state.demo });
+  session.write({ token: res.token, user: res.username });
   enterApp();
-  toast(state.demo ? "Demo Mode — reading a synthetic specimen" : `Signed in as ${res.username}`);
+  toast(`Signed in as ${res.username}`);
 }
 
 function signOut() {
@@ -227,19 +207,10 @@ async function startRead(file) {
   $("#intake").hidden = true;
   $("#bench").hidden = true;
   $("#pipeline").hidden = false;
-  $("#pipe-filename").textContent = state.demo ? "specimen-report.svg" : file.name;
+  $("#pipe-filename").textContent = file.name;
   paintProgress({ status: "UPLOADING", progress: 4, message: "Starting…" });
 
   try {
-    if (state.demo) {
-      await mockApi.upload();
-      await mockApi.run(paintProgress, signal);
-      const raw = await mockApi.result("demo-" + Date.now().toString(36));
-      setImage(DEMO_IMAGE, DEMO_IMAGE_SIZE.w, DEMO_IMAGE_SIZE.h);
-      openResult(normaliseResult(raw));
-      return;
-    }
-
     setImageFromFile(file);
     const started = await liveApi.upload(file, signal);
     const id = started.id;
@@ -334,7 +305,7 @@ function openResult(result) {
   const img = $("#scan-img");
   if (!state.imageUrl) {
     img.hidden = true;
-    $(".scan__hint").textContent = "The original scan isn't stored by the API, so there's nothing to overlay here.";
+    $(".scan__hint").textContent = "PDFs can't be shown here yet, so the boxes can't be drawn over them. The text below was still read correctly. Upload a photo or PNG to see the boxes.";
   } else {
     img.hidden = false;
     $(".scan__hint").textContent = result.hasBoxes
@@ -420,7 +391,7 @@ function renderFields() {
     return;
   }
 
-  const demoRows = demographics.map((d) => `
+  const demographicRows = demographics.map((d) => `
     <div class="frow ${d.confidence < t ? "is-review" : ""}" data-line="${d.lineIndex}">
       <span class="frow__key">${esc(d.label)}</span>
       <span class="frow__val">${esc(d.value)}</span>
@@ -438,7 +409,7 @@ function renderFields() {
     </tr>`).join("");
 
   el.innerHTML = `
-    ${demoRows}
+    ${demographicRows}
     ${analytes.length ? `
       <table class="atable">
         <thead><tr><th>Analyte</th><th>Value</th><th>Unit</th><th>Reference</th><th>Flag</th><th>Conf.</th></tr></thead>
@@ -546,8 +517,7 @@ async function loadHistory() {
 async function reopen(id) {
   try {
     const raw = await api().result(id);
-    if (state.demo) setImage(DEMO_IMAGE, DEMO_IMAGE_SIZE.w, DEMO_IMAGE_SIZE.h);
-    else { releaseImage(); state.imageUrl = null; $("#scan-img").removeAttribute("src"); }
+    releaseImage(); state.imageUrl = null; $("#scan-img").removeAttribute("src");
     showView("bench");
     openResult(normaliseResult(raw));
   } catch (err) {
@@ -559,7 +529,6 @@ async function reopen(id) {
 
 function fillSettings() {
   $("#set-api").value = state.apiBase || "";
-  $("#set-demo").checked = state.demo;
   $("#settings-note").textContent = store.persistent ? "" : "This browser blocks local storage, so settings last only for this tab.";
   $("#settings-note").className = "note";
 }
@@ -567,33 +536,25 @@ function fillSettings() {
 function wireSettings() {
   $("#btn-save-settings").addEventListener("click", () => {
     const next = $("#set-api").value.trim();
-    const demo = $("#set-demo").checked || !next;
-    if (next && !/^https?:\/\//i.test(next)) {
-      setNote("Include the scheme — https://…", true); return;
+    if (!next) { setNote("Enter the address of your reader.", true); return; }
+    if (!/^https?:\/\//i.test(next)) {
+      setNote("The address needs to start with https://", true); return;
     }
     state.apiBase = next;
-    state.demo = demo;
-    settings.write({ apiBase: next, demo });
-    session.write({ token: state.token, user: state.user, demo });
+    settings.write({ apiBase: next });
     paintConnection();
-    setNote(demo ? "Saved. Demo Mode is on." : "Saved. Using your API.");
-  });
-
-  $("#set-demo").addEventListener("change", (e) => {
-    if (!e.target.checked && !$("#set-api").value.trim()) {
-      e.target.checked = true;
-      setNote("Add an API endpoint before leaving Demo Mode.", true);
-    }
+    setNote("Saved.");
   });
 
   $("#btn-test").addEventListener("click", async () => {
     setNote("Testing…");
     try {
       const target = $("#set-api").value.trim();
-      if ($("#set-demo").checked) { await mockApi.ping(); setNote("Demo Mode responds locally."); return; }
       const probe = createApi(() => ({ apiBase: target, token: null }));
       const r = await probe.ping();
-      setNote(`Reachable — the service answered with ${r.status}.`);
+      setNote(r.status === 401 || r.status === 200
+        ? "Connected. Your reader is responding."
+        : `Reached it, but it answered unexpectedly (${r.status}).`);
     } catch (err) {
       setNote(err.message, true);
     }
@@ -617,7 +578,7 @@ function exportJson() {
   a.download = `${(state.result.fileName || "extraction").replace(/\.[^.]+$/, "")}-extraction.json`;
   a.click();
   URL.revokeObjectURL(url);
-  toast("Downloaded");
+  toast("Saved to your downloads");
 }
 
 async function copyText() {
@@ -626,7 +587,7 @@ async function copyText() {
     await navigator.clipboard.writeText(text);
     toast("Text copied");
   } catch {
-    toast("This browser blocked the clipboard. Use Download JSON instead.", true);
+    toast("This browser wouldn't let the page copy text. Use Download results instead.", true);
   }
 }
 

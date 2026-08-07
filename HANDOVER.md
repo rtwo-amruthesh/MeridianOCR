@@ -21,8 +21,8 @@ unverified extraction is worse than no extraction. Everything in the design
 follows from that: the polygons, the confidence threshold slider, the
 hover-to-link between text and region.
 
-**Live frontend:** https://medical-ocr.netlify.app
-**Repository:** https://github.com/rtwo-amruthesh/medical-ocr
+**Live frontend:** https://meridianocr.netlify.app
+**Repository:** https://github.com/rtwo-amruthesh/MeridianOCR
 
 **Not a validated medical device.** Everything it produces is machine-extracted
 and unverified. No real patient data belongs in this repository or in any
@@ -53,15 +53,14 @@ Netlify by copying files.
 | `assets/js/config.js` | API base URL, storage keys, pipeline stage labels |
 | `assets/js/store.js` | Auth token and settings in localStorage |
 | `assets/js/api.js` | Every network call to the Spring API |
-| `assets/js/mock.js` | Demo Mode — replays a bundled specimen with hardcoded boxes |
 | `assets/js/extract.js` | Parses OCR lines into analyte/value/unit/reference rows |
 | `assets/js/app.js` | Views, overlay drawing, state |
-| `assets/demo/specimen-report.svg` | The Demo Mode document |
 
-**Demo Mode matters.** With no backend, the site still walks the entire review
-flow using a bundled synthetic report. That's what makes the Netlify link
-worth sharing even when nothing else is running. It is *not* OCR — it replays a
-fixture.
+**Demo Mode was removed on 7 Aug 2026.** The site previously replayed a bundled
+synthetic report so the link was walkable with no backend. It now requires a
+running server — the Netlify URL alone shows only a sign-in screen. If you want
+the shareable-without-a-backend property back, it lived in `assets/js/mock.js`
+and is recoverable from git history.
 
 ### backend — Spring Boot 3.3.5, Java 17
 
@@ -141,18 +140,22 @@ probably is — it was the minimum shape that satisfied the callers.
 
 ### Working
 
-- Frontend live on Netlify, Demo Mode functional
+- Frontend live on Netlify
 - Full stack runs locally via Docker Compose
 - Registration, login, JWT auth
 - Real OCR on images and PDFs — **verified at 99.2% mean confidence, 115 lines,
   on a real medical PDF**
 - History, per-line confidence, threshold slider, JSON export
+
+Changed 7 Aug 2026: Demo Mode removed; toast notifications moved from the bottom
+of the window to the top (a browser window taller than the screen pushed them out
+of sight, so errors went unread); settings column centred; user-facing copy
+rewritten to drop developer jargon.
 - CI green: OCR service tests (13), `mvn verify`, both Docker images build
 
 ### Not working
 
 - **PDF overlay is blank** (see 7.1) — images are fine
-- Validation errors show "Bad Request" instead of naming the field (7.2)
 - Field extraction only recognises lab-report structure; other document types
   return few or no structured fields (7.3)
 
@@ -194,7 +197,7 @@ MONGO_USER=medicalocr
 API_PORT=8080
 JWT_EXPIRATION_MS=86400000
 LOG_LEVEL=INFO
-CORS_ALLOWED_ORIGINS=https://medical-ocr.netlify.app,http://localhost:5173
+CORS_ALLOWED_ORIGINS=https://meridianocr.netlify.app,http://localhost:5173
 OCR_LANG=en
 WEB_PORT=5173
 "@ | Out-File -Encoding ascii .env
@@ -241,7 +244,7 @@ cloudflared.exe tunnel --url http://localhost:8080
 ```
 
 Prints a URL like `https://random-words.trycloudflare.com`. No account needed.
-Then at https://medical-ocr.netlify.app → Settings → paste **the URL plus `/api`**.
+Then at https://meridianocr.netlify.app → Settings → paste **the URL plus `/api`**.
 
 **The `/api` suffix is mandatory.** Without it every call 404s.
 
@@ -315,7 +318,7 @@ Home region is permanent — pick Hyderabad or Mumbai from India.
    *(Alternatively skip Atlas entirely and keep the Mongo container.)*
 2. **Deploy the stack.** On a VM: clone, write `.env`, `docker compose up -d`.
 3. **TLS.** Caddy is the least work — two lines of config gets automatic Let's Encrypt.
-4. **Set `CORS_ALLOWED_ORIGINS`** to `https://medical-ocr.netlify.app` exactly.
+4. **Set `CORS_ALLOWED_ORIGINS`** to `https://meridianocr.netlify.app` exactly.
    No trailing slash, `https` not `http`.
 5. **Set `DEFAULT_API_BASE`** in `medical-ocr-web/assets/js/config.js` to the
    public API URL including `/api`. Commit and push; Netlify redeploys itself.
@@ -359,15 +362,12 @@ Multi-page PDFs need a page selector too — `OcrLine.page` already carries the 
 **Why it's top of the list:** the overlay is the entire point of the product, and
 PDFs are what medical documents actually arrive as.
 
-### 7.2 Validation errors don't say what's wrong
+### 7.2 ~~Validation errors don't say what's wrong~~ — fixed 7 Aug 2026
 
-`RegisterRequest` has real rules — username 3–40 chars from `[A-Za-z0-9._-]`,
-valid email, **password 12+ characters**. Break any and the UI shows a bare
+`api.js` now reads `ErrorResponse.fieldErrors` and shows the specific message, and
+the registration form's own `minlength` was corrected from 6 to 12 to match
+`RegisterRequest`. The mismatch was why a valid-looking password produced a bare
 "Bad Request".
-
-`GlobalExceptionHandler` already populates `ErrorResponse.fieldErrors` with
-field → message. The frontend ignores it. This is a small change in `api.js`
-and the auth view, and it removes a genuinely confusing first-run experience.
 
 ### 7.3 Field extraction only understands lab reports
 
@@ -519,8 +519,9 @@ medical-ocr/                          ← repo root
    That's the product working as designed — worth seeing before changing anything.
 2. Read `OcrService.java`. It's the spine: upload → store → async OCR → summarise
    → persist. Everything else supports it.
-3. Fix 7.2 — surface `fieldErrors` in the UI. Small, self-contained, removes real
-   confusion, and gets you oriented in both frontend and backend.
+3. Read `assets/js/app.js` alongside it — the frontend is one file of plain JS with
+   no build step, and the upload → poll → render loop is the mirror image of the
+   backend's.
 
 ## If you have one day
 
@@ -537,13 +538,19 @@ is worth more than any feature.
 
 ## 11. Credentials and accounts
 
-- **GitHub** — `rtwo-amruthesh/medical-ocr`, public
-- **Netlify** — connected to that repo, auto-deploys `main`
+- **GitHub** — `rtwo-amruthesh/MeridianOCR`, public
+- **Netlify** — project `meridianocr`, connected to that repo, auto-deploys `main`.
+  The site name and the live URL are the same string, so renaming the Netlify
+  project changes the public URL — and `CORS_ALLOWED_ORIGINS` must be changed to
+  match, or every API call fails with a browser network error and nothing in the
+  API log.
 - **MongoDB Atlas** — M0 free cluster `Cluster0`, region Mumbai, provisioned but
   **not currently used by anything**. Ready for when you deploy. Rotate the
   password before use.
 - **Render** — nothing was created
 - **Hugging Face** — account exists, ruled out
+
+The working copy currently lives at `E:\MeridianOCR\MeridianOCR`.
 
 Local secrets live only in `medical-ocr-platform/.env`. If that file is lost,
 regenerate it with the script in section 5 — but note that a new `MONGO_PASSWORD`

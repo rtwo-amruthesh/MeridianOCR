@@ -47,22 +47,17 @@
         <label class="field"><span>First name</span><input name="firstName" autocomplete="given-name"></label>
         <label class="field"><span>Last name</span><input name="lastName" autocomplete="family-name"></label>
       </div>
-      <label class="field"><span>Username</span><input name="username" required minlength="3" maxlength="20" autocomplete="username"></label>
+      <label class="field"><span>Username</span><input name="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9._\-]+" autocomplete="username"><small>Letters, numbers, dots, dashes and underscores.</small></label>
       <label class="field"><span>Email</span><input name="email" type="email" required autocomplete="email"></label>
-      <label class="field"><span>Password</span><input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+      <label class="field"><span>Password</span><input name="password" type="password" required minlength="12" autocomplete="new-password"><small>At least 12 characters.</small></label>
       <p class="note" id="register-note"></p>
       <button class="btn btn--primary btn--wide" type="submit">Create account</button>
     </form>
   </div>
 
-  <div class="auth__demo">
-    <p><strong>No backend running?</strong> Demo Mode reads a synthetic lab report locally so you can walk the whole flow.</p>
-    <button class="btn btn--ghost" id="btn-demo">Enter Demo Mode</button>
-  </div>
-
   <footer class="auth__foot">
     <span id="auth-endpoint" class="mono"></span>
-    <button class="linkish" id="btn-auth-settings">Change API endpoint</button>
+    <button class="linkish" id="btn-auth-settings">Change server</button>
   </footer>
 </section>
 
@@ -111,7 +106,7 @@
           <p class="drop__sub">or <span class="linkish">browse your files</span> — PNG, JPG or PDF, up to 10&nbsp;MB</p>
           <input type="file" id="file" accept="image/png,image/jpeg,image/webp,application/pdf" hidden>
         </div>
-        <p class="intake__aside">Everything you upload stays inside your own deployment. This page never sends a file anywhere except the endpoint you configured.</p>
+        <p class="intake__aside">Your files go only to the server you set up. Nothing is sent anywhere else.</p>
       </div>
 
       <!-- pipeline -->
@@ -187,7 +182,7 @@
           <div class="datapanel" id="tab-summary" hidden></div>
 
           <div class="bench__actions">
-            <button class="btn btn--primary" id="btn-export">Download JSON</button>
+            <button class="btn btn--primary" id="btn-export">Download results</button>
             <button class="btn btn--ghost" id="btn-copy">Copy text</button>
             <button class="btn btn--quiet" id="btn-new">Read another</button>
           </div>
@@ -218,31 +213,22 @@
 
       <div class="card settings">
         <label class="field">
-          <span>API base URL</span>
+          <span>Server address</span>
           <input id="set-api" class="mono" placeholder="https://your-api.onrender.com/api">
-          <small>Your Spring Boot service, including its <code>/api</code> context path. Leave blank to stay in Demo Mode.</small>
-        </label>
-
-        <label class="toggle">
-          <input type="checkbox" id="set-demo">
-          <span class="toggle__track"><span class="toggle__knob"></span></span>
-          <span class="toggle__label">
-            <strong>Demo Mode</strong>
-            <small>Reads a synthetic report locally. No network calls, no backend needed.</small>
-          </span>
+          <small>The address where your reader is running. It must end in <code>/api</code>.</small>
         </label>
 
         <div class="settings__actions">
-          <button class="btn btn--primary" id="btn-save-settings">Save connection</button>
-          <button class="btn btn--ghost" id="btn-test">Test connection</button>
+          <button class="btn btn--primary" id="btn-save-settings">Save</button>
+          <button class="btn btn--ghost" id="btn-test">Check it works</button>
           <span class="note" id="settings-note"></span>
         </div>
       </div>
 
       <div class="card advisory">
-        <p class="eyebrow">Deploying this</p>
-        <p>Netlify serves this page. Your API and the PaddleOCR service need a host that runs containers — Render, Railway or Fly.io. Put the API's public URL above and the bench will use it.</p>
-        <p>If the browser blocks requests, the API's CORS allowlist needs this site's origin: <code class="mono" id="origin-hint"></code></p>
+        <p class="eyebrow">Setting this up</p>
+        <p>This page is just the viewer. The part that actually reads your documents runs separately — on your own computer, or on a server you rent. Once it's running, put its address above.</p>
+        <p>If saving works but nothing loads, your reader needs to be told this page is allowed to talk to it. The address it needs is: <code class="mono" id="origin-hint"></code></p>
       </div>
     </section>
 
